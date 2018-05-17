@@ -1,0 +1,31 @@
+#!/bin/sh
+set -xe
+
+# install general build dependencies
+apk add --update --no-cache --virtual .build git
+
+
+# download and unpack the core rule set
+git clone "${MODSECURITY_CRS_REPO}" crs
+cd crs
+git checkout -b "ironclad-${IRONCLAD_VERSION}" "${MODSECURITY_CRS_VERSION}"
+mkdir -p /etc/nginx/conf/owasp-modsecurity-crs/
+cp -R rules /etc/nginx/conf/owasp-modsecurity-crs/rules
+
+# then configure the CRS using (almost) the default config (TODO: let a user override this)
+cp crs-setup.conf.example /etc/nginx/conf/owasp-modsecurity-crs/crs-setup.conf
+
+# tweak it to point at the GeoIP database we installed
+sed 's|#SecGeoLookupDB.*|SecGeoLookupDB /usr/share/GeoIP/GeoIP.dat|' -i /etc/nginx/conf/owasp-modsecurity-crs/crs-setup.conf
+
+# create /etc/nginx/conf/modsecurity_crs.conf which is an nginx config that loads all the CRS rules
+echo "modsecurity_rules_file '/etc/nginx/conf/owasp-modsecurity-crs/crs-setup.conf';" > /etc/nginx/conf/modsecurity_crs.conf
+
+# then append each of the CRS .conf rule files, in sorted order
+find /etc/nginx/conf/owasp-modsecurity-crs/rules/ -type f -iname "*.conf" \
+    | sort \
+    | xargs -I{} echo "modsecurity_rules_file '{}';" \
+    >> /etc/nginx/conf/modsecurity_crs.conf
+
+# clean up build-time dependencies
+apk del .build

@@ -1,0 +1,33 @@
+#!/bin/sh
+set -xe
+
+apk add --update --no-cache openssl zlib pcre
+
+apk add --update --no-cache --virtual .build \
+    build-base \
+    git \
+    openssl-dev \
+    pcre-dev \
+    zlib-dev
+
+# download the ModSecurity nginx connector (an nginx module)
+git clone "${MODSECURITY_NGINX_REPO}" ModSecurity-nginx
+(cd ModSecurity-nginx && git checkout -b "ironclad-${IRONCLAD_VERSION}" "${MODSECURITY_NGINX_VERSION}")
+
+# download and unpack nginx to the current (tmp) directory
+curl -o nginx.tgz "${NGINX_URL}"
+tar --strip-components=1 -xzf nginx.tgz
+
+# configure with all the modules we need to act as a proxy
+./configure \
+    --add-module=./ModSecurity-nginx \
+    --with-http_ssl_module \
+    --with-http_realip_module \
+    --prefix=/etc/nginx \
+    --http-log-path=/var/log/nginx/access.log \
+    --error-log-path=/var/log/nginx/error.log \
+    --sbin-path=/usr/local/sbin/nginx
+make  -j "$(getconf _NPROCESSORS_ONLN)"
+make install
+
+apk del .build
