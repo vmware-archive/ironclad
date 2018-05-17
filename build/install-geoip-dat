@@ -1,0 +1,24 @@
+#!/bin/sh
+set -xe
+
+# we need curl but only for this install
+apk add --update --no-cache --virtual .build curl
+
+# download, unzip, and install the legacy database file
+curl -o GeoIP.dat.gz "${MAXMIND_GEOIP_LEGACY_URL}"
+gunzip GeoIP.dat.gz
+mv -v GeoIP.dat /usr/share/GeoIP
+
+# download, unzip, and install the newer format databases
+curl -o GeoLite2-City.tar.gz "${MAXMIND_GEOIP_CITY_URL}"
+tar --strip-components=1 -xzf GeoLite2-City.tar.gz
+mv -v GeoLite2-City.mmdb /usr/share/GeoIP
+curl -o GeoLite2-ASN.tar.gz "${MAXMIND_GEOIP_ASN_URL}"
+tar --strip-components=1 -xzf GeoLite2-ASN.tar.gz
+mv -v GeoLite2-ASN.mmdb /usr/share/GeoIP
+
+chown root:root /usr/share/GeoIP/*
+chmod 444 /usr/share/GeoIP/*
+
+# drop unneeded build dependencies
+apk del .build

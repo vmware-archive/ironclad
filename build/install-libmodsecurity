@@ -1,0 +1,42 @@
+#!/bin/sh
+set -xe
+
+# these are libraries that libmodsecurity needs at runtime
+apk add --update --no-cache \
+    curl \
+    geoip \
+    libstdc++ \
+    libxml2 \
+    pcre \
+    yajl
+
+# install general build dependencies
+apk add --update --no-cache --virtual .build \
+    autoconf \
+    automake \
+    build-base \
+    curl-dev \
+    geoip-dev \
+    git \
+    libtool \
+    libxml2-dev \
+    linux-headers \
+    pcre-dev \
+    yajl-dev
+
+# download the parts of libmodsecurity and its embedded submodules
+git clone "${LIBMODSECURITY_REPO}" src
+cd src
+git checkout -b "ironclad-${IRONCLAD_VERSION}" "${LIBMODSECURITY_VERSION}"
+sh ./build.sh
+git submodule init
+git submodule update
+
+# build and install libmodsecurity
+# TODO: see if we can get LMDB support working
+./configure --disable-doxygen-doc --disable-dependency-tracking --with-pcre=/usr --with-yajl --with-curl=/usr
+make -j "$(getconf _NPROCESSORS_ONLN)"
+make install
+
+# clean up build-time dependencies
+apk del .build
