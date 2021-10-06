@@ -17,11 +17,13 @@ ARG GITHUB_TOKEN
 RUN apk add git && \
     mkdir -p /go/src/github.com/lukekalbfleisch/ironclad && \
     git config --global http.extraheader "GITHUB_TOKEN: ${GITHUB_TOKEN}}"
-COPY ./go.mod /go/src/github.com/lukekalbfleisch/ironclad
-COPY ./go.sum /go/src/github.com/lukekalbfleisch/ironclad
-COPY ./cmd /go/src/github.com/lukekalbfleisch/ironclad/cmd
-COPY ./pkg /go/src/github.com/lukekalbfleisch/ironclad/pkg
-RUN go build github.com/lukekalbfleisch/ironclad/cmd/ironclad && ls -lah
+WORKDIR /go/src/github.com/lukekalbfleisch/ironclad
+COPY ./go.mod .
+COPY ./go.sum .
+COPY ./cmd ./cmd
+COPY ./pkg ./pkg
+WORKDIR /go/src/github.com/lukekalbfleisch/ironclad/cmd/ironclad
+RUN go build
 
 FROM alpine:3.14
 
