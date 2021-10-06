@@ -16,15 +16,11 @@ package main
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/heptiolabs/healthcheck"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -45,7 +41,6 @@ var (
 	configPath       string
 	metricsPort      uint16
 	metricsNamespace string
-	healthPort       uint16
 )
 
 // IroncladCmd represents the base command when called without any subcommands
@@ -86,45 +81,6 @@ func run(_ *cobra.Command, _ []string) {
 		"buildTime": buildinfo.BuildTime,
 	}).Info("starting ironclad")
 
-	// create a metrics registry
-	metricsRegistry := prometheus.NewRegistry()
-
-	// register our own process-level metrics
-	processStats := prometheus.NewProcessCollector(os.Getpid(), metricsNamespace)
-	if err := metricsRegistry.Register(processStats); err != nil {
-		logrus.WithError(err).Fatal("failed to register process metrics")
-	}
-
-	// register our own Go runtime metrics
-	if err := metricsRegistry.Register(prometheus.NewGoCollector()); err != nil {
-		logrus.WithError(err).Fatal("failed to register runtime metrics")
-	}
-
-	// create a healthcheck handler that also ships metrics
-	health := healthcheck.NewMetricsHandler(metricsRegistry, "ironclad")
-	backendAddr := fmt.Sprintf("127.0.0.1:%d", viper.GetInt("backendPort"))
-
-	//
-	health.AddReadinessCheck(
-		"backend-tcp-connect",
-		healthcheck.TCPDialCheck(backendAddr, 50*time.Millisecond))
-
-	// if there's a health port set, expose health
-	if healthPort != 0 {
-		healthListen := fmt.Sprintf("0.0.0.0:%d", healthPort)
-		go http.ListenAndServe(healthListen, health)
-	}
-
-	// if a --metrics-port is set, serve metrics over HTTP
-	if metricsPort != 0 {
-		// start an HTTP listener on metricsPort serving Prometheus at /metrics
-		metricsListen := fmt.Sprintf("0.0.0.0:%d", metricsPort)
-		mux := http.NewServeMux()
-		mux.Handle("/metrics", promhttp.HandlerFor(metricsRegistry, promhttp.HandlerOpts{}))
-		go http.ListenAndServe(metricsListen, mux)
-		logrus.WithField("listen", metricsListen).Info("started metrics listener")
-	}
-
 	// start a background HTTP server to receive audit events
 	auditServer, err := audit.StartServer()
 	if err != nil {
@@ -134,18 +90,9 @@ func run(_ *cobra.Command, _ []string) {
 	// attach a logging handler that annotates with pod metadata and GeoIP lookups
 	auditServer.AddHandler(audit.NewLoggerHandler(logrus.StandardLogger()))
 
-	// attach a MetricsHandler that measures various attributes of audit events
-	metricsHandler, err := audit.NewMetricsHandler(metricsRegistry, metricsNamespace)
-	if err != nil {
-		logrus.WithError(err).Fatal("could not create metrics handler")
-	}
-	auditServer.AddHandler(metricsHandler)
-
 	// launch nginx as a subprocess
 	nginxServer, err := nginx.Start(
-		viperNginxConfig(auditServer.URL()),
-		metricsRegistry,
-		metricsNamespace)
+		viperNginxConfig(auditServer.URL()))
 	if err != nil {
 		logrus.WithError(err).Fatal("could not start nginx")
 	}

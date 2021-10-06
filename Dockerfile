@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.10-alpine3.7 AS build
-RUN mkdir -p /go/src/github.com/heptiolabs/ironclad
-COPY ./vendor /go/src/github.com/heptiolabs/ironclad/vendor
-COPY ./cmd /go/src/github.com/heptiolabs/ironclad/cmd
-COPY ./pkg /go/src/github.com/heptiolabs/ironclad/pkg
-RUN go install -v github.com/heptiolabs/ironclad/cmd/ironclad
+FROM golang:1.17-alpine3.14 AS build
+ARG GITHUB_TOKEN
+RUN apk add git && \
+    mkdir -p /go/src/github.com/lukekalbfleisch/ironclad && \
+    git config --global http.extraheader "GITHUB_TOKEN: ${GITHUB_TOKEN}}"
+COPY ./go.mod /go/src/github.com/lukekalbfleisch/ironclad
+COPY ./go.sum /go/src/github.com/lukekalbfleisch/ironclad
+COPY ./cmd /go/src/github.com/lukekalbfleisch/ironclad/cmd
+COPY ./pkg /go/src/github.com/lukekalbfleisch/ironclad/pkg
+RUN go build github.com/lukekalbfleisch/ironclad/cmd/ironclad && ls -lah
 
-FROM alpine:3.7
+FROM alpine:3.14
 
 # this is passed in from the Makefile
 ARG IRONCLAD_VERSION

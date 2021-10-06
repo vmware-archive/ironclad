@@ -22,22 +22,19 @@ import (
 	"regexp"
 	"syscall"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 )
 
 // Server represents a running nginx instance
 type Server struct {
-	cmd                    *exec.Cmd
-	stderr                 io.Reader
-	log                    *logrus.Entry
-	lastLoadedConfig       Config
-	detectionOnlyModeGauge prometheus.Gauge
-	reloadCounter          prometheus.Counter
+	cmd              *exec.Cmd
+	stderr           io.Reader
+	log              *logrus.Entry
+	lastLoadedConfig Config
 }
 
 // Start an nginx process tree
-func Start(config Config, metrics *prometheus.Registry, metricsNamespace string) (*Server, error) {
+func Start(config Config) (*Server, error) {
 	// find nginx on PATH
 	bin, err := exec.LookPath("nginx")
 	if err != nil {
@@ -81,35 +78,6 @@ func Start(config Config, metrics *prometheus.Registry, metricsNamespace string)
 		lastLoadedConfig: config,
 	}
 
-	// configure metrics
-	s.detectionOnlyModeGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: metricsNamespace,
-		Name:      "detection_only_mode",
-		Help:      "1.0 if ModSecurity is currently in detection-only mode",
-	})
-	if err := metrics.Register(s.detectionOnlyModeGauge); err != nil {
-		return nil, err
-	}
-	if config.DetectionOnly {
-		s.detectionOnlyModeGauge.Set(1.0)
-	} else {
-		s.detectionOnlyModeGauge.Set(0.0)
-	}
-
-	s.reloadCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: metricsNamespace,
-		Name:      "reloads_total",
-		Help:      "Total number of times nginx has been reloaded with SIGHUP",
-	})
-	if err := metrics.Register(s.reloadCounter); err != nil {
-		return nil, err
-	}
-
-	nginxProcessStats := prometheus.NewProcessCollector(cmd.Process.Pid, metricsNamespace+"_nginx")
-	if err := metrics.Register(nginxProcessStats); err != nil {
-		return nil, err
-	}
-
 	return s, nil
 }
 
@@ -131,14 +99,6 @@ func (s *Server) Reload(config Config) {
 	if err := s.cmd.Process.Signal(syscall.SIGHUP); err != nil {
 		s.log.WithError(err).Error("could not send SIGHUP signal")
 		return
-	}
-
-	// update metrics
-	s.reloadCounter.Inc()
-	if config.DetectionOnly {
-		s.detectionOnlyModeGauge.Set(1.0)
-	} else {
-		s.detectionOnlyModeGauge.Set(0.0)
 	}
 
 	// remember that we just loaded this config
